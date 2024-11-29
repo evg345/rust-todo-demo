@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: example      
+      POSTGRES_USER: todoapp
+      POSTGRES_DB: todos
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data 
+ 
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8088:8080
+ 
