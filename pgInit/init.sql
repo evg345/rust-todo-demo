@@ -13,12 +13,12 @@ CREATE TABLE todos (
     todo_id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     todo_text TEXT,
-    completed BOOLEAN DEFAULT FALSE,
-    priority INTEGER DEFAULT 1, -- 1 (low) to 5 (high)
+    completed BOOLEAN DEFAULT FALSE NOT NULL,
+    priority INTEGER DEFAULT 1 NOT NULL, -- 1 (low) to 5 (high)
     due_date TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    user_id INTEGER REFERENCES users(user_id)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    user_id INTEGER REFERENCES users(user_id) NOT NULL
 );
 
 
