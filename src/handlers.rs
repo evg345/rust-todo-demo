@@ -1,63 +1,109 @@
-use crate::models::{CreateTodoRequest, TodoRec, UpdateTodoRequest};
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use sqlx::PgPool;
+use tracing::{info, error, instrument};
+use crate::models::{CreateTodoRequest, TodoRec, UpdateTodoRequest};
 
-/// Select All ToDO Records
+/// List all todos
 #[utoipa::path(
+    get,
+    path = "/todos",
     responses(
-        (status = 200, body = Vec<TodoRec>),
+        (status = 200, description = "List all todos successfully", body = Vec<TodoRec>),
+        (status = 500, description = "Internal server error")
     ),
+    tag = "todos"
 )]
-#[get("/todos")]
-pub async fn get_todos(db: web::Data<PgPool>) -> impl Responder {
-    match sqlx::query_as!(TodoRec, "SELECT * FROM todos ORDER BY created_at DESC")
-        .fetch_all(db.get_ref()) //ToDO: paginator, filter by CurrentUser, user defined sorting
-        .await
-    {
-        Ok(todos) => HttpResponse::Ok().json(todos),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    }
-}
-
-/// Fetch single ToDO Record
-#[utoipa::path(
-    responses(
-        (status = 200, description = "Hello World!"),
-    ),
-    params(
-        ("id" = String, Path, description = "ToDO Record ID <Integer>")
-    ),
-)]
-#[get("/todos/{id}")]
-pub async fn get_todo(db: web::Data<PgPool>, id: web::Path<i32>) -> impl Responder {
-    //ToDo: session?  user_id?
+#[instrument(skip(pool))]
+pub async fn list_todos(
+    State(pool): State<PgPool>
+) -> Result<Json<Vec<TodoRec>>, StatusCode> {
     match sqlx::query_as!(
         TodoRec,
-        "SELECT * FROM todos WHERE todo_id = $1",
-        id.into_inner()
+        "SELECT * FROM todos WHERE user_id = $1 ORDER BY created_at DESC",
+        1 // Hardcoded user_id for now
     )
-    .fetch_optional(db.get_ref())
+    .fetch_all(&pool)
     .await
     {
-        Ok(Some(todo)) => HttpResponse::Ok().json(todo),
-        Ok(None) => HttpResponse::NotFound().body("Todo not found"),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(todos) => {
+            info!("Retrieved {} todos", todos.len());
+            Ok(Json(todos))
+        }
+        Err(e) => {
+            error!("Database error: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
-/// Create new ToDO Record
+/// Get a specific todo by ID
 #[utoipa::path(
+    get,
+    path = "/todos/{id}",
     responses(
-        (status = 200, body = TodoRec),
+        (status = 200, description = "Todo found successfully", body = TodoRec),
+        (status = 404, description = "Todo not found"),
+        (status = 500, description = "Internal server error")
     ),
-    request_body = CreateTodoRequest,
+    params(
+        ("id" = i32, Path, description = "Todo ID")
+    ),
+    tag = "todos"
 )]
-#[post("/todos")]
+#[instrument(skip(pool))]
+pub async fn get_todo(
+    State(pool): State<PgPool>,
+    Path(todo_id): Path<i32>,
+) -> Result<Json<TodoRec>, StatusCode> {
+    match sqlx::query_as!(
+        TodoRec,
+        "SELECT * FROM todos WHERE todo_id = $1 AND user_id = $2",
+        todo_id,
+        1 // Hardcoded user_id for now
+    )
+    .fetch_optional(&pool)
+    .await
+    {
+        Ok(Some(todo)) => {
+            info!("Retrieved todo {}", todo_id);
+            Ok(Json(todo))
+        }
+        Ok(None) => {
+            info!("Todo {} not found", todo_id);
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(e) => {
+            error!("Database error: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Create a new todo
+#[utoipa::path(
+    post,
+    path = "/todos",
+    request_body = CreateTodoRequest,
+    responses(
+        (status = 201, description = "Todo created successfully", body = TodoRec),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "todos"
+)]
+#[instrument(skip(pool))]
 pub async fn create_todo(
-    db: web::Data<PgPool>,
-    todo: web::Json<CreateTodoRequest>,
-) -> impl Responder {
-    //ToDo: session?  user_id?
+    State(pool): State<PgPool>,
+    Json(todo): Json<CreateTodoRequest>,
+) -> Result<(StatusCode, Json<TodoRec>), StatusCode> {
+    if todo.title.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
     match sqlx::query_as!(
         TodoRec,
         r#"
@@ -71,30 +117,41 @@ pub async fn create_todo(
         todo.due_date,
         1 // Hardcoded user_id for now
     )
-    .fetch_one(db.get_ref())
+    .fetch_one(&pool)
     .await
     {
-        Ok(todo) => HttpResponse::Created().json(todo),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(todo) => {
+            info!("Created todo {}", todo.todo_id);
+            Ok((StatusCode::CREATED, Json(todo)))
+        }
+        Err(e) => {
+            error!("Database error: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
-/// Update existing ToDo Record
+/// Update an existing todo
 #[utoipa::path(
-    responses(
-        (status = 200, body = TodoRec),
-    ),
+    put,
+    path = "/todos/{id}",
     request_body = UpdateTodoRequest,
-    params(
-        ("id" = String, Path, description = "ToDO Record ID <Integer>")
+    responses(
+        (status = 200, description = "Todo updated successfully", body = TodoRec),
+        (status = 404, description = "Todo not found"),
+        (status = 500, description = "Internal server error")
     ),
+    params(
+        ("id" = i32, Path, description = "Todo ID")
+    ),
+    tag = "todos"
 )]
-#[put("/todos/{id}")]
+#[instrument(skip(pool))]
 pub async fn update_todo(
-    db: web::Data<PgPool>,
-    id: web::Path<i32>,
-    todo: web::Json<UpdateTodoRequest>,
-) -> impl Responder {
+    State(pool): State<PgPool>,
+    Path(todo_id): Path<i32>,
+    Json(todo): Json<UpdateTodoRequest>,
+) -> Result<Json<TodoRec>, StatusCode> {
     match sqlx::query_as!(
         TodoRec,
         r#"
@@ -105,7 +162,7 @@ pub async fn update_todo(
             priority = COALESCE($4, priority),
             due_date = COALESCE($5, due_date),
             updated_at = CURRENT_TIMESTAMP
-        WHERE todo_id = $6
+        WHERE todo_id = $6 AND user_id = $7
         RETURNING *
         "#,
         todo.title,
@@ -113,33 +170,67 @@ pub async fn update_todo(
         todo.completed,
         todo.priority,
         todo.due_date,
-        id.into_inner()
+        todo_id,
+        1 // Hardcoded user_id for now
     )
-    .fetch_optional(db.get_ref())
+    .fetch_optional(&pool)
     .await
     {
-        Ok(Some(todo)) => HttpResponse::Ok().json(todo),
-        Ok(None) => HttpResponse::NotFound().body("Todo not found"),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(Some(todo)) => {
+            info!("Updated todo {}", todo_id);
+            Ok(Json(todo))
+        }
+        Ok(None) => {
+            info!("Todo {} not found for update", todo_id);
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(e) => {
+            error!("Database error: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
-/// Delete ToDO Record
+/// Delete a todo
 #[utoipa::path(
+    delete,
+    path = "/todos/{id}",
     responses(
-        (status = 200, body = GenericStringResponse),
+        (status = 204, description = "Todo deleted successfully"),
+        (status = 404, description = "Todo not found"),
+        (status = 500, description = "Internal server error")
     ),
     params(
-        ("todo_id" = String, Path, description = "ToDO Record ID")
+        ("id" = i32, Path, description = "Todo ID")
     ),
+    tag = "todos"
 )]
-#[delete("/todos/{todo_id}")]
-pub async fn delete_todo(db: web::Data<PgPool>, todo_id: web::Path<i32>) -> impl Responder {
-    match sqlx::query!("DELETE FROM todos WHERE todo_id = $1", todo_id.into_inner())
-        .execute(db.get_ref())
-        .await
+#[instrument(skip(pool))]
+pub async fn delete_todo(
+    State(pool): State<PgPool>,
+    Path(todo_id): Path<i32>,
+) -> StatusCode {
+    match sqlx::query!(
+        "DELETE FROM todos WHERE todo_id = $1 AND user_id = $2",
+        todo_id,
+        1 // Hardcoded user_id for now
+    )
+    .execute(&pool)
+    .await
     {
-        Ok(_) => HttpResponse::NoContent().finish(),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(result) => {
+            if result.rows_affected() == 0 {
+                info!("Todo {} not found for deletion", todo_id);
+                StatusCode::NOT_FOUND
+            } else {
+                info!("Deleted todo {}", todo_id);
+                StatusCode::NO_CONTENT
+            }
+        }
+        Err(e) => {
+            error!("Database error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     }
 }
+

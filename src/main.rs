@@ -1,20 +1,21 @@
-use actix_web::{middleware, web, App, HttpServer};
-use utoipa::{OpenApi};
-use utoipa_swagger_ui::SwaggerUi;
+mod handlers;
+mod models;
+
+use axum::{routing::get, Router};
 use dotenv::dotenv;
+use log::info;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use std::net::SocketAddr;
-use log::info;
-
-mod handlers;
-
-mod models;
+use axum::routing::{delete, post, put};
+use tower_http::trace::TraceLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        handlers::get_todos,
+        handlers::list_todos,
         handlers::get_todo,
         handlers::create_todo,
         handlers::update_todo,
@@ -31,46 +32,40 @@ mod models;
 )]
 pub struct ApiDoc;
 
-
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+#[tokio::main]
+async fn main() {
     print!("=== Simple ToDo App [Rust, Postgres, REST, Swagger, Docker] ===\n");
 
     dotenv().ok(); // Load environment variables from .env file
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
-    
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
+
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     info!("CONFIG: database_url={}", database_url);
-     
+
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await
         .expect("Failed to create pool");
 
+    let app = Router::new()
+        .route("/", get(|| async { "Hello world!" }))
+        .route("/todos", get(handlers::list_todos))
+        .route("/todos/:id", get(handlers::get_todo))
+        .route("/todos", post(handlers::create_todo))
+        .route("/todos/:id", put(handlers::update_todo))
+        .route("/todos/:id", delete(handlers::delete_todo))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .with_state(pool)
+        .layer(TraceLayer::new_for_http());
+
     let addr = SocketAddr::from(([127, 0, 0, 1], 8000));
-
     info!("Listening at {}", addr);
-    info!("Swagger UI - {}:/swagger-ui/", addr);
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    HttpServer::new(move || {
-        App::new()
-            // enable logger
-            .wrap(middleware::Logger::default())
-            // Shared state - DB Connection pool
-            .app_data(web::Data::new(pool.clone()))
-            .service(handlers::get_todos)
-            .service(handlers::get_todo)
-            .service(handlers::create_todo)
-            .service(handlers::update_todo)
-            .service(handlers::delete_todo)
-            .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", ApiDoc::openapi()),
-            )
-    })
-    .bind(addr)?
-    .run()
-    .await
+    info!("Swagger UI - {}:/swagger-ui/", addr);
+    axum::serve(listener, app).await.unwrap();
 }

@@ -17,6 +17,7 @@
     [x] initial table structure - see ./pgInit/init.sql
 
 ```shell
+  # Start database
   docker compose -f .\compose.yaml up
 ```
 

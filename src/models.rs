@@ -1,6 +1,6 @@
-use chrono::{NaiveDateTime};
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{ToSchema};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TodoRec {
