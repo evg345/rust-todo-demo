@@ -1,0 +1,8 @@
+### Creates new todo for default user
+POST http://localhost:8000/todos
+Content-Type:    application/json
+
+{
+    "title": "title 1",
+    "todo_text": "Text 1"
+}

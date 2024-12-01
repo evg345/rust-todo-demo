@@ -40,3 +40,9 @@ CREATE TABLE todo_tags (
 CREATE INDEX idx_todos_user_id ON todos(user_id);
 CREATE INDEX idx_todos_completed ON todos(completed);
 CREATE INDEX idx_tags_user_id ON tags(user_id);
+
+
+-- Test/Demo data !
+insert into users (user_id, user_name, user_email, user_password_hash)
+    values (1, 'Demo User 1', 'DemoUser1@nowhere', 'n/a');
+commit;

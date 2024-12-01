@@ -5,6 +5,12 @@
 - Rust (Backend)
 - Docker
 
+## REST
+    [X] Welcome bunner 
+    [x] Swagger UI
+        
+    
+
 ## Database
     Postgress is in container 
         - https://www.docker.com/blog/how-to-use-the-postgres-docker-official-image/
@@ -15,7 +21,7 @@
 
 
 ## ToDo:
-
-- Performance load testing
-- Swagger 
+- Logger
+- Session/Users
+- Paginator
 - Benchmark

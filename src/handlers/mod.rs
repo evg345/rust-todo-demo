@@ -1,27 +1,38 @@
+use crate::models::{CreateTodoRequest, TodoRec, UpdateTodoRequest};
 use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 use sqlx::PgPool;
 
-use crate::models::{CreateTodoRequest, Todo, UpdateTodoRequest};
-
+/// Select All ToDO Records
+#[utoipa::path(
+    responses(
+        (status = 200, body = Vec<TodoRec>),
+    ),
+)]
 #[get("/todos")]
 pub async fn get_todos(db: web::Data<PgPool>) -> impl Responder {
-    match sqlx::query_as!(
-        Todo,
-        "SELECT * FROM todos ORDER BY created_at DESC"
-    )
-    .fetch_all(db.get_ref()) //ToDO: paginator
-    .await
+    match sqlx::query_as!(TodoRec, "SELECT * FROM todos ORDER BY created_at DESC")
+        .fetch_all(db.get_ref()) //ToDO: paginator, filter by CurrentUser, user defined sorting
+        .await
     {
         Ok(todos) => HttpResponse::Ok().json(todos),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
 
+/// Fetch single ToDO Record
+#[utoipa::path(
+    responses(
+        (status = 200, description = "Hello World!"),
+    ),
+    params(
+        ("id" = String, Path, description = "ToDO Record ID <Integer>")
+    ),
+)]
 #[get("/todos/{id}")]
 pub async fn get_todo(db: web::Data<PgPool>, id: web::Path<i32>) -> impl Responder {
     //ToDo: session?  user_id?
     match sqlx::query_as!(
-        Todo,
+        TodoRec,
         "SELECT * FROM todos WHERE todo_id = $1",
         id.into_inner()
     )
@@ -34,6 +45,13 @@ pub async fn get_todo(db: web::Data<PgPool>, id: web::Path<i32>) -> impl Respond
     }
 }
 
+/// Create new ToDO Record
+#[utoipa::path(
+    responses(
+        (status = 200, body = TodoRec),
+    ),
+    request_body = CreateTodoRequest,
+)]
 #[post("/todos")]
 pub async fn create_todo(
     db: web::Data<PgPool>,
@@ -41,7 +59,7 @@ pub async fn create_todo(
 ) -> impl Responder {
     //ToDo: session?  user_id?
     match sqlx::query_as!(
-        Todo,
+        TodoRec,
         r#"
         INSERT INTO todos (title, todo_text, priority, due_date, user_id)
         VALUES ($1, $2, $3, $4, $5)
@@ -61,6 +79,16 @@ pub async fn create_todo(
     }
 }
 
+/// Update existing ToDo Record
+#[utoipa::path(
+    responses(
+        (status = 200, body = TodoRec),
+    ),
+    request_body = UpdateTodoRequest,
+    params(
+        ("id" = String, Path, description = "ToDO Record ID <Integer>")
+    ),
+)]
 #[put("/todos/{id}")]
 pub async fn update_todo(
     db: web::Data<PgPool>,
@@ -68,7 +96,7 @@ pub async fn update_todo(
     todo: web::Json<UpdateTodoRequest>,
 ) -> impl Responder {
     match sqlx::query_as!(
-        Todo,
+        TodoRec,
         r#"
         UPDATE todos
         SET title = COALESCE($1, title),
@@ -96,13 +124,22 @@ pub async fn update_todo(
     }
 }
 
-#[delete("/todos/{id}")]
-pub async fn delete_todo(db: web::Data<PgPool>, id: web::Path<i32>) -> impl Responder {
-    match sqlx::query!("DELETE FROM todos WHERE todo_id = $1", id.into_inner())
+/// Delete ToDO Record
+#[utoipa::path(
+    responses(
+        (status = 200, body = GenericStringResponse),
+    ),
+    params(
+        ("todo_id" = String, Path, description = "ToDO Record ID")
+    ),
+)]
+#[delete("/todos/{todo_id}")]
+pub async fn delete_todo(db: web::Data<PgPool>, todo_id: web::Path<i32>) -> impl Responder {
+    match sqlx::query!("DELETE FROM todos WHERE todo_id = $1", todo_id.into_inner())
         .execute(db.get_ref())
         .await
     {
         Ok(_) => HttpResponse::NoContent().finish(),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
-} 
+}
