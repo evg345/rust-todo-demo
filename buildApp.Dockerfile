@@ -27,7 +27,7 @@ WORKDIR /usr/src/app
 
 # Copy the built binary from the previous stage
 COPY --from=builder /usr/src/app/target/release/todo-api ./
-COPY ./env ./
+COPY .env ./
 
 # Command to run the application
 CMD ["./todo-api"]
